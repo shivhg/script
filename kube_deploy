@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -e
+DEPLOYMENT_MANIFEST=${1}
+IMAGE_NAME=${2}
+echo "Current PATH: $PATH"
+ls -l /usr/local/bin/kubernetes-deployment || echo "/usr/local/bin/kubernetes-deployment does not exist"
+which kubernetes-deployment
+which kubernetes-deployment || echo "kubernetes-deployment not found in PATH"
+/usr/local/bin/kubernetes-deployment --version # Replace with actual flag to get version if available
+
+
+export PATH=$PATH:/root/google-cloud-sdk/bin
+export PATH=$PATH:/root/google-cloud-sdk/bin/gke-gcloud-auth-plugin
+
+kubernetes-deployment -m "${DEPLOYMENT_MANIFEST}" -i "${IMAGE_NAME}" -o output/
+cat output/1_*.json
+kubectl get pods
+kubectl config use-context gke_orbital-concord-298917_us-east4-a_cluster-prod --namespace prod
+kubectl apply -f output/
+
+type="$(cat 'kubectl_flags.json' | jq -r '.TYPE')"
+
+if [ "$type" == "StatefulSet" ]; then
+  deployment_file="*_statefulset.json"
+else
+  deployment_file="*_deployment.json"
+fi
+
+if kubectl rollout status -f output/$deployment_file --timeout=360s ; then
+    echo "Deployment finished successfully"
+else
+    echo "Deployment failed"
+    exit 1
+fi
